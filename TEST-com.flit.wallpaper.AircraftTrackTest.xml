@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.flit.wallpaper.AircraftTrackTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-25T17:27:07" hostname="runnervmtai0g" time="0.031">
+  <properties/>
+  <testcase name="deadReckonsAlongTrack" classname="com.flit.wallpaper.AircraftTrackTest" time="0.01"/>
+  <testcase name="newObservationBlendsInsteadOfJumping" classname="com.flit.wallpaper.AircraftTrackTest" time="0.002"/>
+  <testcase name="olderObservationDoesNotOverwriteNewer" classname="com.flit.wallpaper.AircraftTrackTest" time="0.001"/>
+  <testcase name="noDuplicatesAndStaleAircraftFadeAndAreRemoved" classname="com.flit.wallpaper.AircraftTrackTest" time="0.012"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
