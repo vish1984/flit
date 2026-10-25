@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="flit_bg">#FF070B14</color>
+    <color name="flit_surface">#FF0E1424</color>
+    <color name="flit_text">#FFE6EAF2</color>
+    <color name="flit_text_dim">#FF8B93A7</color>
+    <color name="flit_accent">#FF9FB8E8</color>
+</resources>

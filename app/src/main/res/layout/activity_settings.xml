@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:id="@+id/root"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="32dp"
+        android:paddingBottom="40dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/app_name"
+            android:textColor="@color/flit_text"
+            android:textSize="30sp"
+            android:letterSpacing="0.04"
+            android:fontFamily="sans-serif-light" />
+
+        <TextView
+            android:id="@+id/status"
+            style="@style/Flit.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textColor="@color/flit_text_dim"
+            android:textSize="13sp" />
+
+        <com.flit.wallpaper.settings.SkyPreviewView
+            android:id="@+id/preview"
+            android:layout_width="match_parent"
+            android:layout_height="260dp"
+            android:layout_marginTop="20dp" />
+
+        <Button
+            android:id="@+id/apply"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Set as wallpaper" />
+
+        <TextView style="@style/Flit.Section" android:text="Aircraft data" />
+
+        <RadioGroup
+            android:id="@+id/mode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+            <RadioButton android:id="@+id/mode_live" style="@style/Flit.Body"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Live (OpenSky Network)" />
+            <RadioButton android:id="@+id/mode_demo" style="@style/Flit.Body"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Demo (simulated aircraft)" />
+            <RadioButton android:id="@+id/mode_off" style="@style/Flit.Body"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Off (static sky)" />
+        </RadioGroup>
+
+        <TextView style="@style/Flit.Section" android:text="Location" />
+
+        <Spinner
+            android:id="@+id/city"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+            <EditText
+                android:id="@+id/lat"
+                style="@style/Flit.Body"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:hint="Latitude"
+                android:inputType="numberSigned|numberDecimal"
+                android:importantForAutofill="no" />
+            <EditText
+                android:id="@+id/lon"
+                style="@style/Flit.Body"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="12dp"
+                android:hint="Longitude"
+                android:inputType="numberSigned|numberDecimal"
+                android:importantForAutofill="no" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/use_coords"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Use these coordinates" />
+
+        <TextView style="@style/Flit.Section" android:text="Viewing radius" />
+        <TextView android:id="@+id/radius_label" style="@style/Flit.Body"
+            android:layout_width="wrap_content" android:layout_height="wrap_content" />
+        <SeekBar android:id="@+id/radius"
+            android:layout_width="match_parent" android:layout_height="wrap_content" />
+
+        <TextView style="@style/Flit.Section" android:text="Refresh interval" />
+        <TextView android:id="@+id/refresh_label" style="@style/Flit.Body"
+            android:layout_width="wrap_content" android:layout_height="wrap_content" />
+        <SeekBar android:id="@+id/refresh"
+            android:layout_width="match_parent" android:layout_height="wrap_content" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="@color/flit_text_dim"
+            android:textSize="12sp"
+            android:text="Updates run only while the wallpaper is on screen. Battery Saver doubles the interval. Without an OpenSky account the daily allowance is about 400 requests." />
+
+        <TextView style="@style/Flit.Section" android:text="Appearance" />
+        <RadioGroup
+            android:id="@+id/appearance"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+            <RadioButton android:id="@+id/look_sky" style="@style/Flit.Body"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Dark sky" />
+            <RadioButton android:id="@+id/look_black" style="@style/Flit.Body"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Near-black" />
+        </RadioGroup>
+        <Switch
+            android:id="@+id/labels"
+            style="@style/Flit.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Show callsigns" />
+
+        <TextView style="@style/Flit.Section" android:text="OpenSky account (optional)" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/flit_text_dim"
+            android:textSize="12sp"
+            android:text="Leave blank to use OpenSky anonymously. To raise the daily allowance, create an API client in your OpenSky account and enter its client id and secret. They are stored only on this phone." />
+        <EditText
+            android:id="@+id/client_id"
+            style="@style/Flit.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Client id"
+            android:inputType="text"
+            android:importantForAutofill="no" />
+        <EditText
+            android:id="@+id/client_secret"
+            style="@style/Flit.Body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Client secret"
+            android:inputType="textPassword"
+            android:importantForAutofill="no" />
+        <Button
+            android:id="@+id/save_account"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Save account" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="32dp"
+            android:autoLink="web"
+            android:textColor="@color/flit_text_dim"
+            android:textSize="12sp"
+            android:text="@string/attribution" />
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Flit" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/flit_bg</item>
+        <item name="android:statusBarColor">@color/flit_bg</item>
+        <item name="android:navigationBarColor">@color/flit_bg</item>
+        <item name="android:colorAccent">@color/flit_accent</item>
+        <item name="android:textColorPrimary">@color/flit_text</item>
+        <item name="android:textColorSecondary">@color/flit_text_dim</item>
+    </style>
+
+    <style name="Flit.Section">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">28dp</item>
+        <item name="android:layout_marginBottom">8dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:letterSpacing">0.12</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:textColor">@color/flit_text_dim</item>
+    </style>
+
+    <style name="Flit.Body">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/flit_text</item>
+    </style>
+</resources>

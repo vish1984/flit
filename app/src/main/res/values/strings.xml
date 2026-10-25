@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Flit</string>
+    <string name="wallpaper_description">Live aircraft overhead, drawn on a quiet night sky.</string>
+    <string name="attribution">Flight data: The OpenSky Network (opensky-network.org). Positions can be delayed or incomplete and are not for navigation.</string>
+</resources>

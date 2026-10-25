@@ -1,0 +1,36 @@
+name: Build Flit APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Unit tests
+        run: ./gradlew --no-daemon testDebugUnitTest
+      - name: Assemble debug APK
+        run: ./gradlew --no-daemon assembleDebug
+      - name: Inspect APK
+        run: |
+          ls -l app/build/outputs/apk/debug/
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          $BT/aapt2 dump badging app/build/outputs/apk/debug/app-debug.apk | head -20
+          $BT/apksigner verify --print-certs app/build/outputs/apk/debug/app-debug.apk | head -5
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flit-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: app/build/reports/tests/
