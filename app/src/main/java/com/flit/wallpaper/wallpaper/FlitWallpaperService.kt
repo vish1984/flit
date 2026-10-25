@@ -1,6 +1,8 @@
 package com.flit.wallpaper.wallpaper
 
 import android.app.WallpaperColors
+import android.app.WallpaperManager
+import android.os.Bundle
 import android.content.SharedPreferences
 import android.graphics.Canvas
 import android.graphics.Color
@@ -12,6 +14,7 @@ import android.view.SurfaceHolder
 import com.flit.wallpaper.flights.Aircraft
 import com.flit.wallpaper.flights.FlightRepository
 import com.flit.wallpaper.flights.FlightScene
+import com.flit.wallpaper.flights.RouteRepository
 import com.flit.wallpaper.settings.DataMode
 import com.flit.wallpaper.settings.FlitSettings
 
@@ -31,6 +34,7 @@ class FlitWallpaperService : WallpaperService() {
 
     inner class FlitEngine : Engine(),
         FlightRepository.Listener,
+        RouteRepository.Listener,
         SharedPreferences.OnSharedPreferenceChangeListener {
 
         private val handler = Handler(Looper.getMainLooper())
@@ -61,6 +65,7 @@ class FlitWallpaperService : WallpaperService() {
         override fun onDestroy() {
             stopFrames()
             FlightRepository.detach(this)
+            RouteRepository.removeListener(this)
             settings.prefs.unregisterOnSharedPreferenceChangeListener(this)
             renderer.release()
             super.onDestroy()
@@ -87,11 +92,13 @@ class FlitWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(isVisible: Boolean) {
             visible = isVisible
             if (isVisible) {
+                RouteRepository.addListener(this@FlitWallpaperService, this)
                 FlightRepository.attach(this@FlitWallpaperService, this)
                 drawFrame()
             } else {
                 stopFrames()
                 FlightRepository.detach(this)
+                RouteRepository.removeListener(this)
             }
         }
 
@@ -109,6 +116,23 @@ class FlitWallpaperService : WallpaperService() {
             val bg = Color.valueOf(renderer.backgroundColor)
             // Dark wallpaper: no "supports dark text" hint, so launchers use light text.
             return WallpaperColors(bg, Color.valueOf(Color.rgb(159, 184, 232)), null)
+        }
+
+        /** Launchers send taps on empty home-screen space as a wallpaper command. */
+        override fun onCommand(
+            action: String?, x: Int, y: Int, z: Int, extras: Bundle?, resultRequested: Boolean,
+        ): Bundle? {
+            if (action == WallpaperManager.COMMAND_TAP && visible) {
+                if (renderer.handleTap(x.toFloat(), y.toFloat(), System.currentTimeMillis())) {
+                    stopFrames()
+                    drawFrame()
+                }
+            }
+            return null
+        }
+
+        override fun onRoutesUpdated() {
+            if (visible && !loopScheduled) drawFrame()
         }
 
         override fun onFlightsUpdated(aircraft: List<Aircraft>, simulated: Boolean) {

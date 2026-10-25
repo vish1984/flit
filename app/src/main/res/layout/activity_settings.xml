@@ -45,6 +45,21 @@
             android:layout_marginTop="16dp"
             android:text="Set as wallpaper" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="@color/flit_text_dim"
+            android:textSize="12sp"
+            android:text="Tap a plane on the preview or on your home screen to see where it is flying from and to." />
+
+        <TextView style="@style/Flit.Section" android:text="Overhead now" />
+        <LinearLayout
+            android:id="@+id/overhead"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
         <TextView style="@style/Flit.Section" android:text="Aircraft data" />
 
         <RadioGroup
@@ -139,7 +154,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="Show callsigns" />
+            android:text="Show flight number and route on wallpaper" />
 
         <TextView style="@style/Flit.Section" android:text="OpenSky account (optional)" />
         <TextView
@@ -179,5 +194,14 @@
             android:textColor="@color/flit_text_dim"
             android:textSize="12sp"
             android:text="@string/attribution" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:autoLink="web"
+            android:textColor="@color/flit_text_dim"
+            android:textSize="12sp"
+            android:text="@string/route_attribution" />
     </LinearLayout>
 </ScrollView>

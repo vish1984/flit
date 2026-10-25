@@ -45,7 +45,7 @@ class FlitSettings(context: Context) {
         set(v) = prefs.edit().putInt(K_REFRESH, v.coerceIn(MIN_REFRESH_SEC, MAX_REFRESH_SEC)).apply()
 
     var showLabels: Boolean
-        get() = prefs.getBoolean(K_LABELS, false)
+        get() = prefs.getBoolean(K_LABELS, true)
         set(v) = prefs.edit().putBoolean(K_LABELS, v).apply()
 
     var clientId: String

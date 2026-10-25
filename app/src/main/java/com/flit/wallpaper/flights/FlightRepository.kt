@@ -124,6 +124,7 @@ object FlightRepository {
                 latest = snap.aircraft
                 latestSimulated = snap.simulated
                 notifyListeners(ctx)
+                if (listeners.isNotEmpty()) RouteRepository.request(ctx, latest)
             }
         }
     }
@@ -142,6 +143,7 @@ object FlightRepository {
                 latest = MockFlightProvider().fetch(box).aircraft
                 latestSimulated = true
                 notifyListeners(ctx)
+                RouteRepository.request(ctx, latest)
             }
             DataMode.LIVE -> fetchLive(ctx, settings, now)
         }
@@ -189,6 +191,7 @@ object FlightRepository {
                     latestSimulated = false
                     saveStatus(ctx, error = null, count = result.aircraft.size)
                     notifyListeners(ctx)
+                    RouteRepository.request(ctx, result.aircraft)
                     scheduleNext()
                 }
             } catch (e: RateLimitedException) {

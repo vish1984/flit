@@ -8,11 +8,17 @@ import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RadialGradient
+import android.graphics.RectF
 import android.graphics.Shader
+import com.flit.wallpaper.flights.AircraftTrack
 import com.flit.wallpaper.flights.FlightScene
+import com.flit.wallpaper.flights.RouteRepository
 import com.flit.wallpaper.settings.Appearance
 import com.flit.wallpaper.settings.FlitSettings
+import java.util.Locale
 import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.roundToInt
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
@@ -56,10 +62,55 @@ class SkyRenderer(context: Context) {
         color = Color.argb(70, 159, 184, 232)
     }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.argb(120, 200, 210, 235)
-        textSize = 9f * density
-        letterSpacing = 0.06f
+        color = Color.rgb(200, 210, 235)
+        textSize = 9.5f * density
+        letterSpacing = 0.05f
     }
+    private val labelDimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(150, 165, 200)
+        textSize = 8.5f * density
+        letterSpacing = 0.04f
+    }
+    private val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(225, 14, 20, 36)
+    }
+    private val cardStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1f * density
+        color = Color.argb(90, 159, 184, 232)
+    }
+    private val cardTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(232, 236, 245)
+        textSize = 15f * density
+        isFakeBoldText = true
+    }
+    private val cardTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(200, 210, 235)
+        textSize = 13f * density
+    }
+    private val cardDimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(139, 147, 167)
+        textSize = 12f * density
+    }
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.2f * density
+        color = Color.rgb(159, 184, 232)
+    }
+
+    // Screen positions from the last frame, for tap hit-testing.
+    private var hitX = FloatArray(64)
+    private var hitY = FloatArray(64)
+    private val hitTracks = ArrayList<AircraftTrack>(64)
+
+    // Label rectangles drawn this frame, to avoid overlapping labels.
+    private var labelRects = FloatArray(4 * 64)
+    private var labelCount = 0
+
+    private var selectedId: String? = null
+    private var selectedAtMs = 0L
+    private val cardRect = RectF()
+    private val useImperial = Locale.getDefault().country in setOf("US", "LR", "MM")
 
     private val pos = DoubleArray(2)
 
@@ -107,6 +158,12 @@ class SkyRenderer(context: Context) {
         var moving = false
         val maxExtrap = scene.staleAfterMs
         val margin = planeSize * 3
+        hitTracks.clear()
+        labelCount = 0
+        var selX = Float.NaN
+        var selY = Float.NaN
+        var selTrack: AircraftTrack? = null
+        val selId = if (isCardVisible(nowMs)) selectedId else null
         for (t in scene.tracks) {
             val alpha = scene.alphaFor(t, nowMs)
             if (alpha <= 0f) continue
@@ -117,6 +174,10 @@ class SkyRenderer(context: Context) {
             if (t.hasMotion) moving = true
 
             val obs = t.observation ?: continue
+            recordHit(t, x, y)
+            if (t.id == selId) {
+                selX = x; selY = y; selTrack = t
+            }
             // Higher aircraft read slightly smaller and softer, like distance.
             val alt = obs.altitudeM ?: 8000.0
             val altNorm = (alt / 12000.0).coerceIn(0.0, 1.0).toFloat()
@@ -145,16 +206,161 @@ class SkyRenderer(context: Context) {
             canvas.drawPath(planePath, planePaint)
             canvas.restore()
 
-            if (showLabels) {
-                val cs = obs.callsign
-                if (cs != null) {
-                    labelPaint.alpha = (120 * alpha).toInt()
-                    canvas.drawText(cs, x + planeSize * 1.4f, y + planeSize * 0.4f, labelPaint)
-                }
+            if (showLabels && t.id != selId) drawLabel(canvas, t, x, y, alpha)
+        }
+        val st = selTrack
+        if (st != null) {
+            drawCard(canvas, st, selX, selY, nowMs)
+        }
+        return moving || selId != null
+    }
+
+    private fun recordHit(t: AircraftTrack, x: Float, y: Float) {
+        val i = hitTracks.size
+        if (i >= hitX.size) {
+            hitX = hitX.copyOf(i * 2)
+            hitY = hitY.copyOf(i * 2)
+        }
+        hitX[i] = x
+        hitY[i] = y
+        hitTracks.add(t)
+    }
+
+    private fun drawLabel(canvas: Canvas, t: AircraftTrack, x: Float, y: Float, alpha: Float) {
+        val obs = t.observation ?: return
+        val route = RouteRepository.routeFor(obs.callsign)
+        val line1 = route?.flightNumber ?: obs.callsign ?: return
+        val line2 = route?.shortRoute()
+        val lx = x + planeSize * 1.5f
+        val top = y - labelPaint.textSize * 0.9f
+        val w = maxOf(labelPaint.measureText(line1), line2?.let { labelDimPaint.measureText(it) } ?: 0f)
+        val h = labelPaint.textSize * (if (line2 != null) 2.3f else 1.2f)
+        if (overlapsLabel(lx, top, lx + w, top + h)) return
+        addLabelRect(lx, top, lx + w, top + h)
+        labelPaint.alpha = (190 * alpha).toInt()
+        canvas.drawText(line1, lx, y + labelPaint.textSize * 0.1f, labelPaint)
+        if (line2 != null) {
+            labelDimPaint.alpha = (160 * alpha).toInt()
+            canvas.drawText(line2, lx, y + labelPaint.textSize * 1.25f, labelDimPaint)
+        }
+    }
+
+    private fun overlapsLabel(l: Float, t: Float, r: Float, b: Float): Boolean {
+        for (i in 0 until labelCount) {
+            val o = i * 4
+            if (l < labelRects[o + 2] && r > labelRects[o] && t < labelRects[o + 3] && b > labelRects[o + 1]) return true
+        }
+        return false
+    }
+
+    private fun addLabelRect(l: Float, t: Float, r: Float, b: Float) {
+        if ((labelCount + 1) * 4 > labelRects.size) labelRects = labelRects.copyOf(labelRects.size * 2)
+        val o = labelCount * 4
+        labelRects[o] = l; labelRects[o + 1] = t; labelRects[o + 2] = r; labelRects[o + 3] = b
+        labelCount++
+    }
+
+    // ---- Tap to see details ----
+
+    /** Selects the aircraft nearest a tap. Returns true if one was hit. */
+    fun handleTap(x: Float, y: Float, nowMs: Long): Boolean {
+        var best = -1
+        var bestD = TAP_RADIUS_DP * density
+        for (i in 0 until hitTracks.size) {
+            val d = hypot(hitX[i] - x, hitY[i] - y)
+            if (d < bestD) {
+                bestD = d
+                best = i
             }
         }
-        return moving
+        if (best < 0) {
+            // Tapping empty sky dismisses the card.
+            val had = isCardVisible(nowMs)
+            selectedId = null
+            return had
+        }
+        selectedId = hitTracks[best].id
+        selectedAtMs = nowMs
+        return true
     }
+
+    fun isCardVisible(nowMs: Long): Boolean =
+        selectedId != null && nowMs - selectedAtMs < CARD_SHOW_MS + CARD_FADE_MS
+
+    private fun drawCard(canvas: Canvas, t: AircraftTrack, x: Float, y: Float, nowMs: Long) {
+        val obs = t.observation ?: return
+        val age = nowMs - selectedAtMs
+        val fade = when {
+            age < CARD_FADE_MS -> age.toFloat() / CARD_FADE_MS
+            age > CARD_SHOW_MS -> 1f - (age - CARD_SHOW_MS).toFloat() / CARD_FADE_MS
+            else -> 1f
+        }.coerceIn(0f, 1f)
+
+        val route = RouteRepository.routeFor(obs.callsign)
+        val title = buildString {
+            append(route?.flightNumber ?: obs.callsign ?: obs.id.uppercase())
+            route?.airlineName?.let { append("  ·  ").append(it) }
+        }
+        val from = route?.origin?.display()
+        val to = route?.destination?.display()
+        val line2 = when {
+            from != null && to != null -> "$from → $to"
+            to != null -> "To $to"
+            from != null -> "From $from"
+            obs.callsign == null -> "No flight number broadcast"
+            else -> "Route not available"
+        }
+        val line3 = buildString {
+            obs.altitudeM?.let { append(formatAltitude(it)) }
+            obs.speedMs?.let { if (isNotEmpty()) append("  ·  "); append(formatSpeed(it)) }
+            if (isEmpty()) append("Aircraft ${obs.id.uppercase()}")
+        }
+
+        val pad = 12f * density
+        val gap = 6f * density
+        val w = maxOf(
+            cardTitlePaint.measureText(title),
+            cardTextPaint.measureText(line2),
+            cardDimPaint.measureText(line3),
+        ) + pad * 2
+        val h = pad * 2 + cardTitlePaint.textSize + cardTextPaint.textSize + cardDimPaint.textSize + gap * 2
+        val maxW = width - 2 * pad
+        val cw = min(w, maxW)
+        val left = (x - cw / 2).coerceIn(pad, width - pad - cw)
+        var top = y - h - 18f * density
+        if (top < pad * 3) top = y + 18f * density
+        if (top + h > height - pad) top = height - pad - h
+        cardRect.set(left, top, left + cw, top + h)
+
+        val a = (255 * fade).toInt()
+        ringPaint.alpha = (200 * fade).toInt()
+        canvas.drawCircle(x, y, planeSize * 2.2f, ringPaint)
+        cardPaint.alpha = (225 * fade).toInt()
+        cardStrokePaint.alpha = (90 * fade).toInt()
+        val r = 12f * density
+        canvas.drawRoundRect(cardRect, r, r, cardPaint)
+        canvas.drawRoundRect(cardRect, r, r, cardStrokePaint)
+
+        canvas.save()
+        canvas.clipRect(cardRect)
+        var baseline = top + pad + cardTitlePaint.textSize * 0.85f
+        cardTitlePaint.alpha = a
+        canvas.drawText(title, left + pad, baseline, cardTitlePaint)
+        baseline += gap + cardTextPaint.textSize
+        cardTextPaint.alpha = a
+        canvas.drawText(line2, left + pad, baseline, cardTextPaint)
+        baseline += gap + cardDimPaint.textSize
+        cardDimPaint.alpha = a
+        canvas.drawText(line3, left + pad, baseline, cardDimPaint)
+        canvas.restore()
+    }
+
+    private fun formatAltitude(m: Double): String =
+        if (useImperial) String.format(Locale.US, "%,d ft", (m * 3.28084 / 100).roundToInt() * 100)
+        else String.format(Locale.US, "%,d m", (m / 10).roundToInt() * 10)
+
+    private fun formatSpeed(ms: Double): String =
+        if (useImperial) "${(ms * 2.23694).roundToInt()} mph" else "${(ms * 3.6).roundToInt()} km/h"
 
     private fun rebuildBackground() {
         if (width <= 0 || height <= 0) return
@@ -222,6 +428,9 @@ class SkyRenderer(context: Context) {
     }
 
     companion object {
+        const val TAP_RADIUS_DP = 40f
+        const val CARD_SHOW_MS = 7_000L
+        const val CARD_FADE_MS = 400L
         val SKY_TOP = Color.rgb(4, 7, 16)
         val SKY_BOTTOM = Color.rgb(13, 22, 44)
         val NEAR_BLACK = Color.rgb(5, 5, 7)

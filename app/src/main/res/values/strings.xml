@@ -3,4 +3,5 @@
     <string name="app_name">Flit</string>
     <string name="wallpaper_description">Live aircraft overhead, drawn on a quiet night sky.</string>
     <string name="attribution">Flight data: The OpenSky Network (opensky-network.org). Positions can be delayed or incomplete and are not for navigation.</string>
+    <string name="route_attribution">Airline and route details: adsbdb.com. These are scheduled routes from a community database and can occasionally be wrong for a given flight.</string>
 </resources>

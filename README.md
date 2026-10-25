@@ -15,17 +15,24 @@ A minimalist Android live wallpaper that shows real aircraft overhead as tiny si
 
 If the button doesn't open the picker: long-press the home screen → Wallpaper & style → Live wallpapers (wording varies by maker) → Flit.
 
+## Flight details
+
+- **On the wallpaper:** each plane carries a tiny label with its flight number and route, e.g. `AI101  DEL → JFK`. Turn it off under *Show flight number and route on wallpaper*. Labels that would overlap are skipped.
+- **Tap a plane** on an empty part of your home screen, or on the in-app preview, for a card with the airline, *From city (code) → To city (code)*, altitude and speed. It fades after about 7 seconds; tap empty sky to dismiss it sooner. Tap-to-wallpaper is a launcher feature: Pixel, Samsung One UI and most launchers forward taps; a few don't.
+- **In the app:** *Overhead now* lists every flight in range, nearest first.
+- **Source:** routes come from [adsbdb](https://www.adsbdb.com) (free, no key), looked up by callsign: one request at a time, 1.5 s apart, only while Flit is visible, cached on the phone for 24 h (unknown callsigns for 6 h). These are *scheduled* routes from a community database, usually right but occasionally wrong for a particular day. Private aircraft and those not broadcasting a flight number show no route.
+
 ## How it works
 
 | Package | Role |
 |---|---|
 | `wallpaper/` | `FlitWallpaperService` (engine lifecycle), `SkyRenderer` (drawing) |
-| `flights/` | `Aircraft` model, `FlightDataProvider` interface, `MockFlightProvider`, `AircraftTrack` (smoothing), `FlightScene`, `FlightRepository` (scheduling) |
-| `network/` | `OpenSkyProvider`, `OpenSkyParser`, `RefreshPolicy` (interval, backoff, daily budget) |
+| `flights/` | `Aircraft` model, `FlightDataProvider` interface, `MockFlightProvider`, `AircraftTrack` (smoothing), `FlightScene`, `FlightRepository` (scheduling), `RouteRepository` (route lookups and cache) |
+| `network/` | `OpenSkyProvider`, `OpenSkyParser`, `RefreshPolicy` (interval, backoff, daily budget), `AdsbdbRouteProvider` |
 | `projection/` | `LocalProjection`: local equirectangular projection around the chosen centre |
 | `settings/` | `FlitSettings`, `SettingsActivity`, `SkyPreviewView` |
 | `cache/` | `FlightCache`: last snapshot on disk |
-| `app/src/test/` | 18 JVM unit tests |
+| `app/src/test/` | JVM unit tests |
 
 **Rendering.** The sky and stars are drawn once into a bitmap, so each frame is one blit plus a few small paths, with no per-frame allocations. Frames run at about 15 fps only while the wallpaper is visible and something is moving (8 fps in Battery Saver). An empty or static sky is drawn once and then the engine sits idle.
 
@@ -62,4 +69,6 @@ If the button doesn't open the picker: long-press the home screen → Wallpaper 
 - **Status says Offline:** check the phone's internet connection, and make sure Data Saver isn't restricting Flit. Updates happen only while the wallpaper is visible, so look at the home screen for a minute.
 - **Status says "rate limit" or "daily allowance used":** Flit pauses on its own and resumes automatically. Raise the interval, or add an OpenSky API client.
 - **"OpenSky sign-in failed":** recheck the client id and secret, or clear both fields to go back to anonymous.
+- **Route says "unknown":** the callsign isn't in adsbdb, it's a private or military flight, or the lookup hasn't run yet; routes fill in within a few seconds per plane.
+- **Tapping a plane does nothing on the home screen:** your launcher doesn't forward taps to live wallpapers. Use the in-app preview or *Overhead now* instead.
 - **No planes but status is Live:** there may genuinely be none in range. Increase the radius or try Demo mode to confirm rendering works.

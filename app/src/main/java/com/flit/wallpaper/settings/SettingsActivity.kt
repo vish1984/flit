@@ -12,6 +12,7 @@ import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.EditText
 import android.widget.RadioGroup
 import android.widget.SeekBar
@@ -21,8 +22,12 @@ import android.widget.TextView
 import android.widget.Toast
 import com.flit.wallpaper.R
 import com.flit.wallpaper.flights.FlightRepository
+import com.flit.wallpaper.flights.FlightScene
+import com.flit.wallpaper.flights.RouteRepository
 import com.flit.wallpaper.wallpaper.FlitWallpaperService
 import java.util.Locale
+import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 /** Minimal companion screen. Every change is saved immediately to local prefs. */
 class SettingsActivity : Activity() {
@@ -48,6 +53,9 @@ class SettingsActivity : Activity() {
         status = findViewById(R.id.status)
 
         findViewById<Button>(R.id.apply).setOnClickListener { openWallpaperPicker() }
+        val overhead = findViewById<LinearLayout>(R.id.overhead)
+        preview.onSceneChanged = { scene -> renderOverhead(overhead, scene) }
+        renderOverhead(overhead, preview.currentScene)
         setupMode()
         setupLocation()
         setupRadius()
@@ -81,6 +89,80 @@ class SettingsActivity : Activity() {
         }
         status.text = dot + text
     }
+
+    /** Lists flights currently in range, nearest first, with their routes. */
+    private fun renderOverhead(container: LinearLayout, scene: FlightScene) {
+        container.removeAllViews()
+        val now = System.currentTimeMillis()
+        val pos = DoubleArray(2)
+        val rows = scene.tracks
+            .filter { it.observation != null && scene.alphaFor(it, now) > 0f }
+            .map { t ->
+                t.position(now, scene.staleAfterMs, pos)
+                t to hypot(pos[0], pos[1])
+            }
+            .filter { it.second <= settings.radiusKm * 2.0 }
+            .sortedBy { it.second }
+            .take(MAX_ROWS)
+
+        if (rows.isEmpty()) {
+            container.addView(row(
+                if (settings.dataMode == DataMode.OFF) "Live data is off." else "No aircraft in range right now.",
+                null,
+            ))
+            return
+        }
+        val imperial = Locale.getDefault().country == "US"
+        for ((t, km) in rows) {
+            val obs = t.observation!!
+            val route = RouteRepository.routeFor(obs.callsign)
+            val from = route?.origin?.city ?: route?.origin?.code
+            val to = route?.destination?.city ?: route?.destination?.code
+            val title = buildString {
+                append(route?.flightNumber ?: obs.callsign ?: obs.id.uppercase())
+                append("   ")
+                append(
+                    when {
+                        from != null && to != null -> "$from → $to"
+                        to != null -> "to $to"
+                        from != null -> "from $from"
+                        else -> "route unknown"
+                    }
+                )
+            }
+            val detail = buildString {
+                route?.airlineName?.let { append(it).append(" · ") }
+                obs.altitudeM?.let {
+                    append(if (imperial) "${(it * 3.28084 / 100).roundToInt() * 100} ft" else "${(it / 10).roundToInt() * 10} m")
+                    append(" · ")
+                }
+                append(if (imperial) "${(km * 0.621371).roundToInt()} mi away" else "${km.roundToInt()} km away")
+            }
+            container.addView(row(title, detail))
+        }
+    }
+
+    private fun row(title: String, detail: String?): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, dp(8))
+        }
+        box.addView(TextView(this).apply {
+            text = title
+            textSize = 15f
+            setTextColor(getColor(R.color.flit_text))
+        })
+        if (detail != null) {
+            box.addView(TextView(this).apply {
+                text = detail
+                textSize = 12f
+                setTextColor(getColor(R.color.flit_text_dim))
+            })
+        }
+        return box
+    }
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).roundToInt()
 
     private fun setupMode() {
         val group = findViewById<RadioGroup>(R.id.mode)
@@ -248,5 +330,6 @@ class SettingsActivity : Activity() {
 
     private companion object {
         const val CUSTOM = "Custom coordinates"
+        const val MAX_ROWS = 15
     }
 }
