@@ -9,7 +9,7 @@
         <item name="android:textColorSecondary">@color/flit_text_dim</item>
     </style>
 
-    <style name="Flit.Section">
+    <style name="Flit.Section" parent="">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_marginTop">28dp</item>
@@ -20,7 +20,7 @@
         <item name="android:textColor">@color/flit_text_dim</item>
     </style>
 
-    <style name="Flit.Body">
+    <style name="Flit.Body" parent="">
         <item name="android:textSize">15sp</item>
         <item name="android:textColor">@color/flit_text</item>
     </style>
