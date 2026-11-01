@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.flit.wallpaper.RefreshPolicyTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-11-01T17:02:33" hostname="runnervm48cm3" time="0.004">
+  <properties/>
+  <testcase name="honoursRetryAfter" classname="com.flit.wallpaper.RefreshPolicyTest" time="0.001"/>
+  <testcase name="respectsInterval" classname="com.flit.wallpaper.RefreshPolicyTest" time="0.0"/>
+  <testcase name="dailyBudgetResetsAtUtcMidnight" classname="com.flit.wallpaper.RefreshPolicyTest" time="0.001"/>
+  <testcase name="backsOffExponentiallyAndCaps" classname="com.flit.wallpaper.RefreshPolicyTest" time="0.0"/>
+  <testcase name="trustsProviderRemainingCount" classname="com.flit.wallpaper.RefreshPolicyTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

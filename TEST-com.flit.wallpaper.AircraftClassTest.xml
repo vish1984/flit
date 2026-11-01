@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.flit.wallpaper.AircraftClassTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-01T17:02:33" hostname="runnervm48cm3" time="0.059">
+  <properties/>
+  <testcase name="manufacturerAndCategoryFallbacks" classname="com.flit.wallpaper.AircraftClassTest" time="0.035"/>
+  <testcase name="trailKeepsRecentPointsOldestFirst" classname="com.flit.wallpaper.AircraftClassTest" time="0.001"/>
+  <testcase name="parsesOpenSkyCategory" classname="com.flit.wallpaper.AircraftClassTest" time="0.008"/>
+  <testcase name="speedHeuristicWhenNothingKnown" classname="com.flit.wallpaper.AircraftClassTest" time="0.001"/>
+  <testcase name="typeCodesWin" classname="com.flit.wallpaper.AircraftClassTest" time="0.001"/>
+  <testcase name="friendlyNames" classname="com.flit.wallpaper.AircraftClassTest" time="0.007"/>
+  <testcase name="parsesAdsbdbAircraft" classname="com.flit.wallpaper.AircraftClassTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
