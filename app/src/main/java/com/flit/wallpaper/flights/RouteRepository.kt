@@ -9,14 +9,16 @@ import java.io.File
 import java.util.concurrent.Executors
 
 /**
- * Looks up and caches routes for callsigns currently overhead.
+ * Looks up and caches flight metadata for aircraft currently overhead:
+ * routes (by callsign) and aircraft types (by ICAO 24-bit address).
  *
  *  - Lookups are queued by [FlightRepository] after each position update, so
  *    they only happen while Flit is visible.
- *  - One lookup at a time, spaced [SPACING_MS] apart, on its own thread so
- *    positions are never delayed by route lookups.
- *  - Hits are cached for a day and misses for 6 hours, in memory and on disk.
- *    A plane seen once costs one lookup per day at most.
+ *  - Routes and types share one queue: one request at a time, spaced
+ *    [SPACING_MS] apart, on its own thread. Routes go first.
+ *  - Routes are cached for a day (misses 6 h). Aircraft types change almost
+ *    never, so they are cached for 30 days (misses 7 days). All of it is kept
+ *    in memory and on disk.
  *
  * Public methods are main-thread only.
  */
@@ -26,7 +28,12 @@ object RouteRepository {
         fun onRoutesUpdated()
     }
 
-    private class Entry(val route: RouteInfo?, val fetchedAtMs: Long)
+    private class Entry<T>(val value: T?, val fetchedAtMs: Long)
+
+    private sealed class Job {
+        data class Route(val callsign: String) : Job()
+        data class Type(val icao24: String) : Job()
+    }
 
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor { r ->
@@ -37,14 +44,20 @@ object RouteRepository {
     }
     private val provider = AdsbdbRouteProvider()
 
-    private val cache = HashMap<String, Entry>()
-    private val queue = LinkedHashSet<String>()
+    private val routes = HashMap<String, Entry<RouteInfo>>()
+    private val types = HashMap<String, Entry<AircraftTypeInfo>>()
+    private val routeQueue = LinkedHashSet<Job>()
+    private val typeQueue = LinkedHashSet<Job>()
     private val listeners = LinkedHashSet<Listener>()
     private var draining = false
     private var pausedUntilMs = 0L
     private var loaded = false
     private var dirty = false
     private var appContext: Context? = null
+
+    /** Increments whenever any cached metadata changes; renderers use it to refresh per-track caches. */
+    var version = 0
+        private set
 
     fun addListener(context: Context, l: Listener) {
         appContext = context.applicationContext
@@ -60,69 +73,106 @@ object RouteRepository {
     fun routeFor(callsign: String?): RouteInfo? {
         val cs = Callsigns.normalize(callsign) ?: return null
         DemoRoutes.forCallsign(cs)?.let { return it }
-        return cache[cs]?.route
+        return routes[cs]?.value
     }
 
-    /** Queues lookups for any callsigns not cached or with expired entries. */
+    /** Cached aircraft type for an ICAO address, or null if unknown or not yet looked up. */
+    fun typeFor(icao24: String): AircraftTypeInfo? {
+        DemoRoutes.typeFor(icao24)?.let { return it }
+        return types[icao24]?.value
+    }
+
+    /** Queues lookups for anything not cached or expired. */
     fun request(context: Context, aircraft: List<Aircraft>) {
         appContext = context.applicationContext
         loadOnce()
         val now = System.currentTimeMillis()
         for (a in aircraft) {
-            val cs = Callsigns.normalize(a.callsign) ?: continue
-            if (!Callsigns.looksLikeAirline(cs) || DemoRoutes.forCallsign(cs) != null) continue
-            val e = cache[cs]
-            if (e != null && now - e.fetchedAtMs < ttl(e)) continue
-            if (queue.size < MAX_QUEUE) queue.add(cs)
+            val cs = Callsigns.normalize(a.callsign)
+            if (cs != null && Callsigns.looksLikeAirline(cs) && DemoRoutes.forCallsign(cs) == null) {
+                val e = routes[cs]
+                val fresh = e != null && now - e.fetchedAtMs < (if (e.value != null) ROUTE_TTL_MS else ROUTE_MISS_TTL_MS)
+                if (!fresh && routeQueue.size < MAX_QUEUE) routeQueue.add(Job.Route(cs))
+            }
+            if (DemoRoutes.typeFor(a.id) == null && HEX.matches(a.id)) {
+                val e = types[a.id]
+                val fresh = e != null && now - e.fetchedAtMs < (if (e.value != null) TYPE_TTL_MS else TYPE_MISS_TTL_MS)
+                if (!fresh && typeQueue.size < MAX_QUEUE) typeQueue.add(Job.Type(a.id))
+            }
         }
         drain()
     }
 
-    private fun ttl(e: Entry) = if (e.route != null) HIT_TTL_MS else MISS_TTL_MS
+    private fun nextJob(): Job? {
+        val q = if (routeQueue.isNotEmpty()) routeQueue else typeQueue
+        val job = q.firstOrNull() ?: return null
+        q.remove(job)
+        return job
+    }
+
+    private fun requeue(job: Job) {
+        when (job) {
+            is Job.Route -> routeQueue.add(job)
+            is Job.Type -> typeQueue.add(job)
+        }
+    }
 
     private fun drain() {
-        if (draining || queue.isEmpty()) return
+        if (draining) return
+        if (routeQueue.isEmpty() && typeQueue.isEmpty()) return
         val ctx = appContext ?: return
         val now = System.currentTimeMillis()
         if (now < pausedUntilMs) {
             main.postDelayed({ drain() }, pausedUntilMs - now)
             return
         }
-        val cs = queue.first().also { queue.remove(it) }
+        val job = nextJob() ?: return
         draining = true
         worker.execute {
-            var result: AdsbdbRouteProvider.Result? = null
+            var found: Any? = null
+            var answered = false
             var rateLimited = false
             try {
-                result = provider.lookup(cs)
+                when (job) {
+                    is Job.Route -> {
+                        val r = provider.lookup(job.callsign)
+                        found = (r as? AdsbdbRouteProvider.Result.Found)?.route
+                    }
+                    is Job.Type -> found = provider.lookupAircraft(job.icao24)
+                }
+                answered = true
             } catch (_: AdsbdbRouteProvider.RateLimited) {
                 rateLimited = true
             } catch (_: Exception) {
                 // Network error: leave uncached so it is retried on a later update.
             }
-            val outcome = result
+            val value = found
+            val ok = answered
             val limited = rateLimited
             main.post {
                 draining = false
                 val t = System.currentTimeMillis()
-                when {
-                    limited -> {
-                        pausedUntilMs = t + RATE_LIMIT_PAUSE_MS
-                        queue.add(cs)
+                if (limited) {
+                    pausedUntilMs = t + RATE_LIMIT_PAUSE_MS
+                    requeue(job)
+                } else if (ok) {
+                    when (job) {
+                        is Job.Route -> routes[job.callsign] = Entry(value as RouteInfo?, t)
+                        is Job.Type -> types[job.icao24] = Entry(value as AircraftTypeInfo?, t)
                     }
-                    outcome is AdsbdbRouteProvider.Result.Found -> {
-                        cache[cs] = Entry(outcome.route, t)
-                        dirty = true
+                    dirty = true
+                    if (value != null) {
+                        version++
                         notifyListeners()
                     }
-                    outcome is AdsbdbRouteProvider.Result.Unknown -> {
-                        cache[cs] = Entry(null, t)
-                        dirty = true
-                    }
                 }
-                if (queue.isEmpty() || listeners.isEmpty()) {
+                val idle = routeQueue.isEmpty() && typeQueue.isEmpty()
+                if (idle || listeners.isEmpty()) {
                     // Stop when nothing is visible; leftovers are re-queued next time.
-                    if (listeners.isEmpty()) queue.clear()
+                    if (listeners.isEmpty()) {
+                        routeQueue.clear()
+                        typeQueue.clear()
+                    }
                     persist(ctx)
                 } else {
                     main.postDelayed({ drain() }, SPACING_MS)
@@ -137,55 +187,65 @@ object RouteRepository {
 
     // ---- disk cache ----
 
-    private fun file(ctx: Context) = File(ctx.filesDir, "routes_cache.json")
+    private fun routeFile(ctx: Context) = File(ctx.filesDir, "routes_cache.json")
+    private fun typeFile(ctx: Context) = File(ctx.filesDir, "types_cache.json")
 
     private fun loadOnce() {
         if (loaded) return
         val ctx = appContext ?: return
         loaded = true
         worker.execute {
-            val loadedMap = HashMap<String, Entry>()
-            try {
-                val f = file(ctx)
-                if (f.exists()) {
-                    val root = JSONObject(f.readText())
-                    val now = System.currentTimeMillis()
-                    for (key in root.keys()) {
-                        val o = root.optJSONObject(key) ?: continue
-                        val t = o.optLong("t")
-                        val route = o.optJSONObject("r")?.let(::routeFromJson)
-                        val e = Entry(route, t)
-                        if (now - t < ttl(e)) loadedMap[key] = e
-                    }
-                }
-            } catch (_: Exception) {
-            }
+            val now = System.currentTimeMillis()
+            val r = readMap(routeFile(ctx)) { o -> o.optJSONObject("r")?.let(::routeFromJson) }
+                .filterValues { now - it.fetchedAtMs < (if (it.value != null) ROUTE_TTL_MS else ROUTE_MISS_TTL_MS) }
+            val ty = readMap(typeFile(ctx)) { o -> o.optJSONObject("a")?.let(::typeFromJson) }
+                .filterValues { now - it.fetchedAtMs < (if (it.value != null) TYPE_TTL_MS else TYPE_MISS_TTL_MS) }
             main.post {
-                for ((k, v) in loadedMap) if (!cache.containsKey(k)) cache[k] = v
-                if (loadedMap.isNotEmpty()) notifyListeners()
+                for ((k, v) in r) if (!routes.containsKey(k)) routes[k] = v
+                for ((k, v) in ty) if (!types.containsKey(k)) types[k] = v
+                if (r.isNotEmpty() || ty.isNotEmpty()) {
+                    version++
+                    notifyListeners()
+                }
             }
         }
+    }
+
+    private fun <T> readMap(f: File, parse: (JSONObject) -> T?): Map<String, Entry<T>> {
+        val out = HashMap<String, Entry<T>>()
+        try {
+            if (!f.exists()) return out
+            val root = JSONObject(f.readText())
+            for (key in root.keys()) {
+                val o = root.optJSONObject(key) ?: continue
+                out[key] = Entry(parse(o), o.optLong("t"))
+            }
+        } catch (_: Exception) {
+        }
+        return out
     }
 
     private fun persist(ctx: Context) {
         if (!dirty) return
         dirty = false
-        val now = System.currentTimeMillis()
-        // Newest entries first, capped.
-        val snapshot = cache.entries
-            .filter { now - it.value.fetchedAtMs < ttl(it.value) }
-            .sortedByDescending { it.value.fetchedAtMs }
-            .take(MAX_DISK_ENTRIES)
-            .map { it.key to it.value }
+        val r = routes.entries.sortedByDescending { it.value.fetchedAtMs }.take(MAX_DISK_ENTRIES).map { it.key to it.value }
+        val ty = types.entries.sortedByDescending { it.value.fetchedAtMs }.take(MAX_DISK_ENTRIES).map { it.key to it.value }
         worker.execute {
             try {
                 val root = JSONObject()
-                for ((k, e) in snapshot) {
+                for ((k, e) in r) {
                     val o = JSONObject().put("t", e.fetchedAtMs)
-                    e.route?.let { o.put("r", routeToJson(it)) }
+                    e.value?.let { o.put("r", routeToJson(it)) }
                     root.put(k, o)
                 }
-                file(ctx).writeText(root.toString())
+                routeFile(ctx).writeText(root.toString())
+                val troot = JSONObject()
+                for ((k, e) in ty) {
+                    val o = JSONObject().put("t", e.fetchedAtMs)
+                    e.value?.let { o.put("a", typeToJson(it)) }
+                    troot.put(k, o)
+                }
+                typeFile(ctx).writeText(troot.toString())
             } catch (_: Exception) {
             }
         }
@@ -220,15 +280,32 @@ object RouteRepository {
         name = o.optString("n", "").ifEmpty { null },
     )
 
+    private fun typeToJson(a: AircraftTypeInfo) = JSONObject().apply {
+        a.icaoType?.let { put("i", it) }
+        a.manufacturer?.let { put("m", it) }
+        a.model?.let { put("t", it) }
+        a.registration?.let { put("r", it) }
+    }
+
+    private fun typeFromJson(o: JSONObject) = AircraftTypeInfo(
+        icaoType = o.optString("i", "").ifEmpty { null },
+        manufacturer = o.optString("m", "").ifEmpty { null },
+        model = o.optString("t", "").ifEmpty { null },
+        registration = o.optString("r", "").ifEmpty { null },
+    )
+
+    private val HEX = Regex("^[0-9a-f]{6}$")
     private const val SPACING_MS = 1_500L
     private const val RATE_LIMIT_PAUSE_MS = 5 * 60_000L
-    private const val HIT_TTL_MS = 24 * 3_600_000L
-    private const val MISS_TTL_MS = 6 * 3_600_000L
+    private const val ROUTE_TTL_MS = 24 * 3_600_000L
+    private const val ROUTE_MISS_TTL_MS = 6 * 3_600_000L
+    private const val TYPE_TTL_MS = 30 * 24 * 3_600_000L
+    private const val TYPE_MISS_TTL_MS = 7 * 24 * 3_600_000L
     private const val MAX_QUEUE = 80
-    private const val MAX_DISK_ENTRIES = 600
+    private const val MAX_DISK_ENTRIES = 1_000
 }
 
-/** Fixed routes for Demo mode so the details UI can be tried offline. Clearly fictional airline. */
+/** Fixed routes and types for Demo mode so the details UI can be tried offline. Clearly fictional airline. */
 object DemoRoutes {
     private val routes = mapOf(
         "FLT101" to RouteInfo("FL101", "Demo Air", Airport("DEL", "Delhi", null), Airport("BOM", "Mumbai", null)),
@@ -240,5 +317,18 @@ object DemoRoutes {
         "FLT707" to RouteInfo("FL707", "Demo Air", Airport("SFO", "San Francisco", null), Airport("NRT", "Tokyo", null)),
     )
 
+    private val types = mapOf(
+        "demo01" to AircraftTypeInfo("A20N", "Airbus", "A320neo", null),
+        "demo02" to AircraftTypeInfo("B38M", "Boeing", "737 MAX 8", null),
+        "demo03" to AircraftTypeInfo("AT76", "ATR", "72-600", null),
+        "demo04" to AircraftTypeInfo("B77W", "Boeing", "777-300ER", null),
+        "demo05" to AircraftTypeInfo("DH8D", "De Havilland", "Dash 8-400", null),
+        "demo06" to AircraftTypeInfo("A359", "Airbus", "A350-900", null),
+        "demo07" to AircraftTypeInfo("B789", "Boeing", "787-9", null),
+        "demo08" to AircraftTypeInfo("EC35", "Airbus Helicopters", "H135", null),
+        "demo09" to AircraftTypeInfo("C172", "Cessna", "172 Skyhawk", null),
+    )
+
     fun forCallsign(cs: String): RouteInfo? = routes[cs]
+    fun typeFor(id: String): AircraftTypeInfo? = types[id]
 }

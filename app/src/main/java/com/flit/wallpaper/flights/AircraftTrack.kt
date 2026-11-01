@@ -34,6 +34,46 @@ class AircraftTrack(val id: String) {
     val trackDeg: Double? get() = observation?.trackDeg
     val hasMotion: Boolean get() = velE != 0.0 || velN != 0.0
 
+    // ---- Visual class, cached against RouteRepository.version ----
+    var aircraftClass: AircraftClass = AircraftClass.JET
+    var classVersion: Int = -1
+
+    // ---- Trail: ring buffer of past drawn positions (km) and altitudes (m) ----
+    private val trailE = FloatArray(TRAIL_POINTS)
+    private val trailN = FloatArray(TRAIL_POINTS)
+    private val trailAlt = FloatArray(TRAIL_POINTS)
+    private var trailHead = 0
+    var trailCount = 0
+        private set
+    private var lastTrailMs = 0L
+
+    /**
+     * Records the drawn position every [TRAIL_SAMPLE_MS]. A gap (wallpaper was
+     * hidden) restarts the trail rather than drawing a straight jump.
+     */
+    fun sampleTrail(nowMs: Long, eKm: Double, nKm: Double, altM: Double) {
+        if (trailCount > 0 && nowMs - lastTrailMs > TRAIL_SAMPLE_MS * 4) clearTrail()
+        if (trailCount > 0 && nowMs - lastTrailMs < TRAIL_SAMPLE_MS) return
+        trailE[trailHead] = eKm.toFloat()
+        trailN[trailHead] = nKm.toFloat()
+        trailAlt[trailHead] = altM.toFloat()
+        trailHead = (trailHead + 1) % TRAIL_POINTS
+        if (trailCount < TRAIL_POINTS) trailCount++
+        lastTrailMs = nowMs
+    }
+
+    /** i = 0 is the oldest point. */
+    fun trailEAt(i: Int): Float = trailE[ringIndex(i)]
+    fun trailNAt(i: Int): Float = trailN[ringIndex(i)]
+    fun trailAltAt(i: Int): Float = trailAlt[ringIndex(i)]
+
+    private fun ringIndex(i: Int): Int = (trailHead - trailCount + i + TRAIL_POINTS) % TRAIL_POINTS
+
+    fun clearTrail() {
+        trailCount = 0
+        trailHead = 0
+    }
+
     fun update(a: Aircraft, proj: LocalProjection, nowMs: Long, maxExtrapolationMs: Long) {
         val tmp = DoubleArray(2)
         val had = observation != null
@@ -43,6 +83,7 @@ class AircraftTrack(val id: String) {
 
         observation = a
         lastSeenMs = nowMs
+        classVersion = -1
         setBase(a, proj)
 
         if (had) {
@@ -55,6 +96,7 @@ class AircraftTrack(val id: String) {
             } else {
                 corrE = 0.0
                 corrN = 0.0
+                clearTrail()
             }
             corrStartMs = nowMs
         }
@@ -65,6 +107,7 @@ class AircraftTrack(val id: String) {
         observation?.let { setBase(it, proj) }
         corrE = 0.0
         corrN = 0.0
+        clearTrail()
     }
 
     /** Writes the smoothed (east, north) in km into [out]. */
@@ -117,5 +160,8 @@ class AircraftTrack(val id: String) {
         private const val BLEND_TAU_MS = BLEND_MS / 3.0
         /** Corrections larger than this are treated as a new track, not blended. */
         const val MAX_BLEND_KM = 15.0
+        /** 30 points × 3 s ≈ the last 90 seconds of flight. */
+        const val TRAIL_POINTS = 30
+        const val TRAIL_SAMPLE_MS = 3_000L
     }
 }

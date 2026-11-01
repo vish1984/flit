@@ -18,6 +18,8 @@ data class Aircraft(
     val speedMs: Double?,
     /** Epoch seconds at which the position was observed. */
     val positionTimeSec: Long,
+    /** ADS-B emitter category as reported by OpenSky (0/1 = unknown, 8 = rotorcraft, ...). */
+    val category: Int? = null,
 )
 
 /** Geographic rectangle used for provider queries. */

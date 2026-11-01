@@ -35,6 +35,8 @@ class MockFlightProvider(
         Route("demo05", "FLT505", 300.0, 140.0, 3200.0, 0.20, 0.05),
         Route("demo06", "FLT606", 95.0, 230.0, 10900.0, 0.65, 0.70),
         Route("demo07", "FLT707", 205.0, 200.0, 8800.0, 0.45, -0.60),
+        Route("demo08", "DEMO8", 130.0, 60.0, 450.0, 0.35, 0.30),
+        Route("demo09", "DEMO9", 330.0, 55.0, 1200.0, 0.70, -0.25),
     )
 
     override fun fetch(box: BoundingBox): FetchResult {

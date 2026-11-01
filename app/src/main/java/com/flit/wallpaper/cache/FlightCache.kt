@@ -31,6 +31,7 @@ class FlightCache(context: Context) {
                     put("trk", a.trackDeg ?: JSONObject.NULL)
                     put("spd", a.speedMs ?: JSONObject.NULL)
                     put("t", a.positionTimeSec)
+                    a.category?.let { put("cat", it) }
                 })
             }
             val root = JSONObject()
@@ -67,6 +68,7 @@ class FlightCache(context: Context) {
                         trackDeg = if (o.isNull("trk")) null else o.optDouble("trk"),
                         speedMs = if (o.isNull("spd")) null else o.optDouble("spd"),
                         positionTimeSec = o.optLong("t"),
+                        category = if (o.has("cat")) o.optInt("cat") else null,
                     )
                 )
             }

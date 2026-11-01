@@ -132,6 +132,7 @@ class SettingsActivity : Activity() {
             }
             val detail = buildString {
                 route?.airlineName?.let { append(it).append(" · ") }
+                RouteRepository.typeFor(t.id)?.displayName()?.let { append(it).append(" · ") }
                 obs.altitudeM?.let {
                     append(if (imperial) "${(it * 3.28084 / 100).roundToInt() * 100} ft" else "${(it / 10).roundToInt() * 10} m")
                     append(" · ")
@@ -277,9 +278,19 @@ class SettingsActivity : Activity() {
 
     private fun setupAppearance() {
         val group = findViewById<RadioGroup>(R.id.appearance)
-        group.check(if (settings.appearance == Appearance.DARK_SKY) R.id.look_sky else R.id.look_black)
+        group.check(
+            when (settings.appearance) {
+                Appearance.DARK_SKY -> R.id.look_sky
+                Appearance.NEAR_BLACK -> R.id.look_black
+                Appearance.SKYLIGHT -> R.id.look_skylight
+            }
+        )
         group.setOnCheckedChangeListener { _, id ->
-            settings.appearance = if (id == R.id.look_black) Appearance.NEAR_BLACK else Appearance.DARK_SKY
+            settings.appearance = when (id) {
+                R.id.look_black -> Appearance.NEAR_BLACK
+                R.id.look_skylight -> Appearance.SKYLIGHT
+                else -> Appearance.DARK_SKY
+            }
             preview.reloadSettings(clearScene = false)
         }
         val labels = findViewById<Switch>(R.id.labels)

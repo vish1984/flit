@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 import com.flit.wallpaper.projection.LocalProjection
 
 enum class DataMode { LIVE, DEMO, OFF }
-enum class Appearance { DARK_SKY, NEAR_BLACK }
+enum class Appearance { DARK_SKY, NEAR_BLACK, SKYLIGHT }
 
 /** A predefined place the user can pick instead of typing coordinates. */
 data class City(val name: String, val lat: Double, val lon: Double)

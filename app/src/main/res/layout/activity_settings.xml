@@ -147,6 +147,9 @@
             <RadioButton android:id="@+id/look_black" style="@style/Flit.Body"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
                 android:text="Near-black" />
+            <RadioButton android:id="@+id/look_skylight" style="@style/Flit.Body"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="Skylight: pure black with range rings" />
         </RadioGroup>
         <Switch
             android:id="@+id/labels"

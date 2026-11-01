@@ -10,6 +10,8 @@ import android.graphics.Path
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
+import com.flit.wallpaper.flights.AircraftClass
+import com.flit.wallpaper.flights.AircraftClassifier
 import com.flit.wallpaper.flights.AircraftTrack
 import com.flit.wallpaper.flights.FlightScene
 import com.flit.wallpaper.flights.RouteRepository
@@ -45,7 +47,6 @@ class SkyRenderer(context: Context) {
     var xOffset = 0.5f
     private val parallaxPx = 24f * density
 
-    private val planePath = buildPlanePath()
     private val planeSize = 7.5f * density
 
     private val planePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -54,9 +55,30 @@ class SkyRenderer(context: Context) {
     }
     private val trailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1f * density
+        strokeWidth = 1.5f * density
         strokeCap = Paint.Cap.ROUND
         color = Color.rgb(200, 210, 235)
+    }
+    private val rotorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        // Unit-space width: the canvas is scaled by the glyph size when this is used.
+        strokeWidth = 0.09f
+        color = Color.rgb(232, 236, 245)
+    }
+    private val rangePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1f * density
+        color = Color.argb(46, 159, 184, 232)
+    }
+    private val rangeTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(90, 159, 184, 232)
+        textSize = 9f * density
+    }
+    /** Pre-built ring labels so no strings are created per frame. */
+    private val ringLabels: Array<String> = Array(31) { i ->
+        val km = i * 10
+        if (useImperialUnits()) "${(km * 0.621371).roundToInt()} mi" else "$km km"
     }
     private val homePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(70, 159, 184, 232)
@@ -110,12 +132,18 @@ class SkyRenderer(context: Context) {
     private var selectedId: String? = null
     private var selectedAtMs = 0L
     private val cardRect = RectF()
-    private val useImperial = Locale.getDefault().country in setOf("US", "LR", "MM")
+    private val useImperial = useImperialUnits()
+
+    private fun useImperialUnits() = Locale.getDefault().country in setOf("US", "LR", "MM")
 
     private val pos = DoubleArray(2)
 
     val backgroundColor: Int
-        get() = if (appearance == Appearance.DARK_SKY) SKY_BOTTOM else NEAR_BLACK
+        get() = when (appearance) {
+            Appearance.DARK_SKY -> SKY_BOTTOM
+            Appearance.NEAR_BLACK -> NEAR_BLACK
+            Appearance.SKYLIGHT -> Color.BLACK
+        }
 
     fun setSize(w: Int, h: Int) {
         if (w == width && h == height && background != null) return
@@ -142,10 +170,10 @@ class SkyRenderer(context: Context) {
     /** Draws one frame. Returns true if anything on screen is moving. */
     fun draw(canvas: Canvas, scene: FlightScene, nowMs: Long): Boolean {
         val bg = background
-        if (bg == null) {
-            canvas.drawColor(backgroundColor)
-        } else {
-            canvas.drawBitmap(bg, -xOffset * parallaxPx, 0f, null)
+        when {
+            appearance == Appearance.SKYLIGHT -> canvas.drawColor(Color.BLACK)
+            bg == null -> canvas.drawColor(backgroundColor)
+            else -> canvas.drawBitmap(bg, -xOffset * parallaxPx, 0f, null)
         }
         if (width == 0 || height == 0) return false
 
@@ -153,6 +181,7 @@ class SkyRenderer(context: Context) {
         val cy = height / 2f
         val pxPerKm = (min(width, height) / 2f) / radiusKm
 
+        if (appearance == Appearance.SKYLIGHT) drawRangeRings(canvas, cx, cy, pxPerKm)
         canvas.drawCircle(cx, cy, 1.4f * density, homePaint)
 
         var moving = false
@@ -164,46 +193,51 @@ class SkyRenderer(context: Context) {
         var selY = Float.NaN
         var selTrack: AircraftTrack? = null
         val selId = if (isCardVisible(nowMs)) selectedId else null
+        val metaVersion = RouteRepository.version
         for (t in scene.tracks) {
             val alpha = scene.alphaFor(t, nowMs)
             if (alpha <= 0f) continue
             t.position(nowMs, maxExtrap, pos)
+            val obs = t.observation ?: continue
+            val alt = obs.altitudeM ?: 8000.0
+            if (t.hasMotion) t.sampleTrail(nowMs, pos[0], pos[1], alt)
+
             val x = cx + (pos[0] * pxPerKm).toFloat()
             val y = cy - (pos[1] * pxPerKm).toFloat()
             if (x < -margin || x > width + margin || y < -margin || y > height + margin) continue
             if (t.hasMotion) moving = true
 
-            val obs = t.observation ?: continue
+            if (t.classVersion != metaVersion) {
+                t.aircraftClass = AircraftClassifier.classify(
+                    RouteRepository.typeFor(t.id), obs.category, obs.speedMs, obs.altitudeM,
+                )
+                t.classVersion = metaVersion
+            }
+            val cls = t.aircraftClass
+
             recordHit(t, x, y)
             if (t.id == selId) {
                 selX = x; selY = y; selTrack = t
             }
             // Higher aircraft read slightly smaller and softer, like distance.
-            val alt = obs.altitudeM ?: 8000.0
             val altNorm = (alt / 12000.0).coerceIn(0.0, 1.0).toFloat()
-            val scale = planeSize * (1.15f - 0.3f * altNorm)
+            val scale = planeSize * (1.15f - 0.3f * altNorm) * Glyphs.sizeFactor(cls)
             val baseAlpha = 0.95f - 0.3f * altNorm
             val a = (255 * baseAlpha * alpha).toInt()
 
-            val track = t.trackDeg
-            if (track != null) {
-                val speed = obs.speedMs ?: 0.0
-                if (speed > 30) {
-                    val len = (6f + (speed / 250.0).toFloat().coerceAtMost(1.4f) * 12f) * density
-                    val rad = Math.toRadians(track)
-                    val dx = (sin(rad) * len).toFloat()
-                    val dy = (-cos(rad) * len).toFloat()
-                    trailPaint.alpha = (a * 0.16f).toInt()
-                    canvas.drawLine(x - dx * 0.35f, y - dy * 0.35f, x - dx * 1.6f, y - dy * 1.6f, trailPaint)
-                }
-            }
+            drawTrail(canvas, t, obs.speedMs, alt, x, y, cx, cy, pxPerKm, alpha)
 
+            val track = (t.trackDeg ?: 0.0).toFloat()
             planePaint.alpha = a
             canvas.save()
             canvas.translate(x, y)
-            canvas.rotate((track ?: 0.0).toFloat())
+            canvas.rotate(track)
             canvas.scale(scale, scale)
-            canvas.drawPath(planePath, planePaint)
+            canvas.drawPath(Glyphs.pathFor(cls), planePaint)
+            if (cls == AircraftClass.HELICOPTER) {
+                drawRotor(canvas, nowMs, a)
+                moving = true
+            }
             canvas.restore()
 
             if (showLabels && t.id != selId) drawLabel(canvas, t, x, y, alpha)
@@ -213,6 +247,83 @@ class SkyRenderer(context: Context) {
             drawCard(canvas, st, selX, selY, nowMs)
         }
         return moving || selId != null
+    }
+
+    /** Altitude-coloured trail from recorded positions, fading toward the oldest point. */
+    private fun drawTrail(
+        canvas: Canvas, t: AircraftTrack, speedMs: Double?, altM: Double,
+        x: Float, y: Float, cx: Float, cy: Float, pxPerKm: Float, alpha: Float,
+    ) {
+        val n = t.trailCount
+        if (n < 2) {
+            // No history yet: a short streak behind the aircraft along its heading.
+            val track = t.trackDeg ?: return
+            val speed = speedMs ?: return
+            if (speed <= 30) return
+            val len = (6f + (speed / 250.0).toFloat().coerceAtMost(1.4f) * 12f) * density
+            val rad = Math.toRadians(track)
+            val dx = (sin(rad) * len).toFloat()
+            val dy = (-cos(rad) * len).toFloat()
+            trailPaint.color = Glyphs.altitudeColor(altM.toFloat())
+            trailPaint.alpha = (110 * alpha).toInt()
+            canvas.drawLine(x - dx * 0.35f, y - dy * 0.35f, x - dx * 1.6f, y - dy * 1.6f, trailPaint)
+            return
+        }
+        var px = cx + t.trailEAt(0) * pxPerKm
+        var py = cy - t.trailNAt(0) * pxPerKm
+        for (i in 1..n) {
+            val nx: Float
+            val ny: Float
+            val segAlt: Float
+            if (i < n) {
+                nx = cx + t.trailEAt(i) * pxPerKm
+                ny = cy - t.trailNAt(i) * pxPerKm
+                segAlt = t.trailAltAt(i)
+            } else {
+                nx = x
+                ny = y
+                segAlt = altM.toFloat()
+            }
+            val fade = i.toFloat() / n
+            trailPaint.color = Glyphs.altitudeColor(segAlt)
+            trailPaint.alpha = (TRAIL_MAX_ALPHA * fade * fade * alpha).toInt()
+            canvas.drawLine(px, py, nx, ny, trailPaint)
+            px = nx
+            py = ny
+        }
+    }
+
+    /** Two-blade main rotor, in the glyph's unit space (canvas already transformed). */
+    private fun drawRotor(canvas: Canvas, nowMs: Long, alpha: Int) {
+        val angle = (nowMs % 360_000L) * Glyphs.ROTOR_DEG_PER_MS
+        rotorPaint.alpha = (alpha * 0.75f).toInt()
+        canvas.save()
+        canvas.translate(Glyphs.ROTOR_CX, Glyphs.ROTOR_CY)
+        canvas.rotate(angle % 360f)
+        val r = Glyphs.ROTOR_RADIUS
+        canvas.drawLine(-r, 0f, r, 0f, rotorPaint)
+        canvas.drawLine(0f, -r, 0f, r, rotorPaint)
+        canvas.restore()
+    }
+
+    /** Skylight-style range rings and a north marker around the centre point. */
+    private fun drawRangeRings(canvas: Canvas, cx: Float, cy: Float, pxPerKm: Float) {
+        val step = ringStepKm(radiusKm)
+        var km = step
+        while (km <= radiusKm * 1.8f) {
+            val r = km * pxPerKm
+            canvas.drawCircle(cx, cy, r, rangePaint)
+            canvas.drawText(ringLabels[(km / 10).coerceAtMost(ringLabels.size - 1)], cx + r * 0.7071f + 3 * density, cy - r * 0.7071f, rangeTextPaint)
+            km += step
+        }
+        val top = cy - radiusKm * pxPerKm
+        canvas.drawText("N", cx - rangeTextPaint.measureText("N") / 2, top - 4 * density, rangeTextPaint)
+    }
+
+    private fun ringStepKm(radius: Int): Int = when {
+        radius <= 30 -> 10
+        radius <= 75 -> 20
+        else -> 50
     }
 
     private fun recordHit(t: AircraftTrack, x: Float, y: Float) {
@@ -310,8 +421,10 @@ class SkyRenderer(context: Context) {
             obs.callsign == null -> "No flight number broadcast"
             else -> "Route not available"
         }
+        val typeName = RouteRepository.typeFor(t.id)?.displayName()
         val line3 = buildString {
-            obs.altitudeM?.let { append(formatAltitude(it)) }
+            typeName?.let { append(it) }
+            obs.altitudeM?.let { if (isNotEmpty()) append("  ·  "); append(formatAltitude(it)) }
             obs.speedMs?.let { if (isNotEmpty()) append("  ·  "); append(formatSpeed(it)) }
             if (isEmpty()) append("Aircraft ${obs.id.uppercase()}")
         }
@@ -364,6 +477,12 @@ class SkyRenderer(context: Context) {
 
     private fun rebuildBackground() {
         if (width <= 0 || height <= 0) return
+        if (appearance == Appearance.SKYLIGHT) {
+            // Pure black is drawn directly; no bitmap needed.
+            background?.recycle()
+            background = null
+            return
+        }
         val w = width + parallaxPx.toInt()
         val bmp = background?.takeIf { it.width == w && it.height == height && it.isMutable }
             ?: Bitmap.createBitmap(w, height, Bitmap.Config.ARGB_8888).also { background?.recycle() }
@@ -399,38 +518,11 @@ class SkyRenderer(context: Context) {
         }
     }
 
-    private fun buildPlanePath(): Path {
-        // Unit aircraft pointing up (north), roughly 2 units nose to tail.
-        val half = floatArrayOf(
-            0f, -1f,
-            0.10f, -0.86f,
-            0.12f, -0.30f,
-            0.95f, 0.12f,
-            0.95f, 0.28f,
-            0.12f, 0.10f,
-            0.09f, 0.62f,
-            0.36f, 0.82f,
-            0.36f, 0.94f,
-            0f, 0.86f,
-        )
-        val path = Path()
-        path.moveTo(half[0], half[1])
-        var i = 2
-        while (i < half.size) {
-            path.lineTo(half[i], half[i + 1]); i += 2
-        }
-        i = half.size - 4
-        while (i >= 2) {
-            path.lineTo(-half[i], half[i + 1]); i -= 2
-        }
-        path.close()
-        return path
-    }
-
     companion object {
         const val TAP_RADIUS_DP = 40f
         const val CARD_SHOW_MS = 7_000L
         const val CARD_FADE_MS = 400L
+        const val TRAIL_MAX_ALPHA = 150f
         val SKY_TOP = Color.rgb(4, 7, 16)
         val SKY_BOTTOM = Color.rgb(13, 22, 44)
         val NEAR_BLACK = Color.rgb(5, 5, 7)

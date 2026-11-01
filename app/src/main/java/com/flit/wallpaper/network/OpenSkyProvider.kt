@@ -42,7 +42,7 @@ class OpenSkyProvider(
         val url = URL(
             String.format(
                 Locale.US,
-                "%s/states/all?lamin=%.4f&lomin=%.4f&lamax=%.4f&lomax=%.4f",
+                "%s/states/all?lamin=%.4f&lomin=%.4f&lamax=%.4f&lomax=%.4f&extended=1",
                 API_BASE, box.latMin, box.lonMin, box.latMax, box.lonMax,
             )
         )

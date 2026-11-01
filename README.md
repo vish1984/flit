@@ -15,6 +15,13 @@ A minimalist Android live wallpaper that shows real aircraft overhead as tiny si
 
 If the button doesn't open the picker: long-press the home screen → Wallpaper & style → Live wallpapers (wording varies by maker) → Flit.
 
+## Skylight-style aircraft
+
+- **A silhouette per aircraft type:** narrow-body jets, larger wide-body "heavies" with engine pods, turboprops with straight wings and propellers, small light aircraft, and helicopters with a spinning rotor.
+- **How the type is known:** Flit looks up the transponder address in adsbdb's aircraft database. The result is cached for 30 days per airframe, so each plane costs one lookup a month at most. If the type is unknown, it uses the category the aircraft broadcasts (OpenSky `extended=1`). Failing that, it guesses from speed and altitude.
+- **Trails coloured by altitude:** orange near the ground, then yellow, green and cyan, up to violet at cruise. They show roughly the last 90 seconds of each plane's drawn path. Positions arrive about every 2 minutes, so trails are mostly straight, with gentle bends where a fresh fix corrects the course. They don't trace every turn the way Skylight does with a local radio receiver.
+- **Skylight look** (Appearance → *Skylight: pure black with range rings*): a pure-black sky with range rings in km (mi on US phones) and a north marker.
+
 ## Flight details
 
 - **On the wallpaper:** each plane carries a tiny label with its flight number and route, e.g. `AI101  DEL → JFK`. Turn it off under *Show flight number and route on wallpaper*. Labels that would overlap are skipped.
@@ -26,8 +33,8 @@ If the button doesn't open the picker: long-press the home screen → Wallpaper 
 
 | Package | Role |
 |---|---|
-| `wallpaper/` | `FlitWallpaperService` (engine lifecycle), `SkyRenderer` (drawing) |
-| `flights/` | `Aircraft` model, `FlightDataProvider` interface, `MockFlightProvider`, `AircraftTrack` (smoothing), `FlightScene`, `FlightRepository` (scheduling), `RouteRepository` (route lookups and cache) |
+| `wallpaper/` | `FlitWallpaperService` (engine lifecycle), `SkyRenderer` (drawing), `Glyphs` (silhouettes, altitude colours) |
+| `flights/` | `Aircraft` model, `FlightDataProvider` interface, `MockFlightProvider`, `AircraftTrack` (smoothing, trail history), `AircraftType` (classifier), `FlightScene`, `FlightRepository` (scheduling), `RouteRepository` (route lookups and cache) |
 | `network/` | `OpenSkyProvider`, `OpenSkyParser`, `RefreshPolicy` (interval, backoff, daily budget), `AdsbdbRouteProvider` |
 | `projection/` | `LocalProjection`: local equirectangular projection around the chosen centre |
 | `settings/` | `FlitSettings`, `SettingsActivity`, `SkyPreviewView` |

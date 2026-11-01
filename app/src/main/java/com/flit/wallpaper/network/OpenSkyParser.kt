@@ -53,6 +53,7 @@ object OpenSkyParser {
             trackDeg = row.num(10)?.takeIf { it in 0.0..360.0 },
             speedMs = row.num(9)?.takeIf { it >= 0.0 },
             positionTimeSec = time,
+            category = if (row.length() > 17) row.num(17)?.toInt()?.takeIf { it >= 2 } else null,
         )
     }
 

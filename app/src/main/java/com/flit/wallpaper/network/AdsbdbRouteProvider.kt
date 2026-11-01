@@ -1,5 +1,6 @@
 package com.flit.wallpaper.network
 
+import com.flit.wallpaper.flights.AircraftTypeInfo
 import com.flit.wallpaper.flights.Airport
 import com.flit.wallpaper.flights.RouteInfo
 import org.json.JSONObject
@@ -9,8 +10,10 @@ import java.net.URL
 import java.net.URLEncoder
 
 /**
- * Callsign → scheduled route, airline and airports, from adsbdb.com
- * (free, no API key). Only the public callsign is sent.
+ * Lookups against adsbdb.com (free, no API key):
+ *  - callsign → scheduled route, airline and airports
+ *  - ICAO 24-bit address → aircraft type
+ * Only the public callsign or transponder address is sent.
  */
 class AdsbdbRouteProvider {
 
@@ -23,7 +26,19 @@ class AdsbdbRouteProvider {
     class RateLimited : Exception("adsbdb rate limit")
 
     fun lookup(callsign: String): Result {
-        val url = URL(API_BASE + URLEncoder.encode(callsign, "UTF-8"))
+        val body = get(API_BASE + URLEncoder.encode(callsign, "UTF-8")) ?: return Result.Unknown
+        return parse(body)?.let { Result.Found(it) } ?: Result.Unknown
+    }
+
+    /** Aircraft type for an ICAO 24-bit address, or null if the database doesn't know it. */
+    fun lookupAircraft(icao24: String): AircraftTypeInfo? {
+        val body = get(AIRCRAFT_BASE + URLEncoder.encode(icao24, "UTF-8")) ?: return null
+        return parseAircraft(body)
+    }
+
+    /** Returns the body on 200, null on 404; throws on rate limit or other errors. */
+    private fun get(address: String): String? {
+        val url = URL(address)
         val conn = (url.openConnection() as HttpURLConnection).apply {
             connectTimeout = TIMEOUT_MS
             readTimeout = TIMEOUT_MS
@@ -33,11 +48,8 @@ class AdsbdbRouteProvider {
         }
         try {
             return when (val code = conn.responseCode) {
-                HttpURLConnection.HTTP_OK -> {
-                    val body = conn.inputStream.bufferedReader().use { it.readText() }
-                    parse(body)?.let { Result.Found(it) } ?: Result.Unknown
-                }
-                HttpURLConnection.HTTP_NOT_FOUND -> Result.Unknown
+                HttpURLConnection.HTTP_OK -> conn.inputStream.bufferedReader().use { it.readText() }
+                HttpURLConnection.HTTP_NOT_FOUND -> null
                 429 -> throw RateLimited()
                 else -> throw IOException("adsbdb HTTP $code")
             }
@@ -48,6 +60,7 @@ class AdsbdbRouteProvider {
 
     companion object {
         const val API_BASE = "https://api.adsbdb.com/v0/callsign/"
+        const val AIRCRAFT_BASE = "https://api.adsbdb.com/v0/aircraft/"
         private const val TIMEOUT_MS = 10_000
 
         /**
@@ -73,6 +86,24 @@ class AdsbdbRouteProvider {
                 origin = origin,
                 destination = destination,
             )
+        }
+
+        /** Parses `{"response":{"aircraft":{...}}}`; anything else returns null. */
+        fun parseAircraft(json: String): AircraftTypeInfo? {
+            val root = try {
+                JSONObject(json)
+            } catch (_: Exception) {
+                return null
+            }
+            val response = root.opt("response") as? JSONObject ?: return null
+            val a = response.optJSONObject("aircraft") ?: return null
+            val info = AircraftTypeInfo(
+                icaoType = a.str("icao_type")?.uppercase(),
+                manufacturer = a.str("manufacturer"),
+                model = a.str("type"),
+                registration = a.str("registration"),
+            )
+            return if (info.icaoType == null && info.model == null && info.manufacturer == null) null else info
         }
 
         private fun airport(o: JSONObject): Airport? {
